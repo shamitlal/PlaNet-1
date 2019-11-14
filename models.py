@@ -2,7 +2,8 @@ from typing import Optional, List
 import torch
 from torch import jit, nn
 from torch.nn import functional as F
-
+import ipdb 
+st = ipdb.set_trace
 
 # Wraps the input tuple for a function to process a time x batch x features sequence in batch x features (assumes one output)
 def bottle(f, x_tuple):
@@ -17,6 +18,7 @@ class TransitionModel(jit.ScriptModule):
 
   def __init__(self, belief_size, state_size, action_size, hidden_size, embedding_size, activation_function='relu', min_std_dev=0.1):
     super().__init__()
+    st()
     self.act_fn = getattr(F, activation_function)
     self.min_std_dev = min_std_dev
     self.fc_embed_state_action = nn.Linear(state_size + action_size, belief_size)

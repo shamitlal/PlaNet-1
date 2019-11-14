@@ -87,6 +87,54 @@ class ControlSuiteEnv():
 
 
 
+class PushTaskEnv():
+  def __init__(self, max_episode_length, bit_depth,B):
+    self.B = B
+    from PushImageInput import PushImageInput
+    self._env = PushImageInput()
+    self.max_episode_length = max_episode_length #should be 6
+    self.action_repeat = 1
+    self.bit_depth = bit_depth
+
+  def reset(self):
+    self.t = 0  # Reset internal timer
+    return _images_to_observation(self._env.render(mode='rgb_array'), self.bit_depth)
+  
+  def step(self, action):
+    action = action.detach().numpy()
+    reward = 0
+    for k in range(self.action_repeat):
+      state, reward_k, done, _ = self._env.step(action)
+      reward += reward_k
+      self.t += 1  # Increment internal timer
+      done = done or self.t == self.max_episode_length
+      if done:
+        break
+    
+    observation = _images_to_observation(self._env.render(mode='rgb_array'), self.bit_depth)
+    return observation, reward, done
+
+  @property
+  def observation_size(self):
+    return (3, 64, 64)
+
+  @property
+  def action_size(self):
+    '''
+    sample.actions.shape = 
+    TensorShape([2, 5, 3])
+    '''
+    return 3
+
+  # Sample an action randomly from a uniform distribution over all valid actions
+  def sample_random_action(self):
+    rand_np = np.random.uniform(-0.3, 0.3, (self.B, 5, 3))
+    return torch.from_numpy(rand_np)
+
+
+
+
+
 class GymEnv():
   def __init__(self, env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
     import gym
