@@ -36,7 +36,7 @@ parser.add_argument('--belief-size', type=int, default=200, metavar='H', help='B
 parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='State/latent size')
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
-parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
+parser.add_argument('--episodes', type=int, default=1000000, metavar='E', help='Total number of episodes')
 parser.add_argument('--seed-episodes', type=int, default=500, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
@@ -120,13 +120,17 @@ reward_model = RewardModel(args.belief_size, args.state_size, args.hidden_size, 
 encoder = Encoder(args.symbolic_env, env.observation_size, args.embedding_size, args.activation_function).to(device=args.device)
 param_list = list(transition_model.parameters()) + list(observation_model.parameters()) + list(encoder.parameters())
 optimiser = optim.Adam(param_list, lr=0 if args.learning_rate_schedule != 0 else args.learning_rate, eps=args.adam_epsilon)
-if args.models is not '' and os.path.exists(args.models):
+st()
+if args.models is not '':# and os.path.exists(args.models):
+  st()
+  print("Loading model")
   model_dicts = torch.load(args.models)
   transition_model.load_state_dict(model_dicts['transition_model'])
   observation_model.load_state_dict(model_dicts['observation_model'])
   # reward_model.load_state_dict(model_dicts['reward_model'])
   encoder.load_state_dict(model_dicts['encoder'])
   optimiser.load_state_dict(model_dicts['optimiser'])
+  print("Loaded model")
 planner = MPCPlanner(env.action_size, args.planning_horizon, args.optimisation_iters, args.candidates, args.top_candidates, transition_model, reward_model)
 global_prior = Normal(torch.zeros(args.batch_size, args.state_size, device=args.device), torch.ones(args.batch_size, args.state_size, device=args.device))  # Global prior N(0, I)
 free_nats = torch.full((1, ), args.free_nats, device=args.device)  # Allowed deviation in KL divergence
@@ -321,4 +325,4 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
 
 
 # Close training environment
-env.close()
+# env.close()
