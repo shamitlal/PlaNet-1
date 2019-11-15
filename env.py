@@ -105,6 +105,9 @@ class PushTaskEnv():
 
     return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth)
   
+  def getBatch(self):
+    push_data = self._env.data(0)
+    
   def step(self, action):
     action = action.detach().numpy()
     reward = 0

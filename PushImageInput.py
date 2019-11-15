@@ -201,7 +201,7 @@ class PushImageInput:
         _, _ = utils.pyplot_vis.plot_adam_voxel(crop_mask[0, 1, :, :, :,0], fig_id=11, coord="xright-ydown")
 
         plt.show()
-        st()
+        # st()
 
 
 

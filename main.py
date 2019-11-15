@@ -18,8 +18,7 @@ st = ipdb.set_trace
 from tensorboardX import SummaryWriter
 #SummaryWriter encapsulates everything
 import sys 
-arg1 = "exp3"
-writer = SummaryWriter('runs/'+arg1)
+
 
 # Hyperparameters
 parser = argparse.ArgumentParser(description='PlaNet')
@@ -38,7 +37,7 @@ parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='Sta
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
 parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
-parser.add_argument('--seed-episodes', type=int, default=1000, metavar='S', help='Seed episodes')
+parser.add_argument('--seed-episodes', type=int, default=200, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
 parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
@@ -58,15 +57,19 @@ parser.add_argument('--optimisation-iters', type=int, default=10, metavar='I', h
 parser.add_argument('--candidates', type=int, default=1000, metavar='J', help='Candidate samples per iteration')
 parser.add_argument('--top-candidates', type=int, default=100, metavar='K', help='Number of top candidates to fit')
 parser.add_argument('--test', action='store_true', help='Test only')
-parser.add_argument('--test-interval', type=int, default=20, metavar='I', help='Test interval (episodes)')
-parser.add_argument('--test-episodes', type=int, default=10, metavar='E', help='Number of test episodes')
+parser.add_argument('--test-interval', type=int, default=200, metavar='I', help='Test interval (episodes)')
+parser.add_argument('--test-episodes', type=int, default=1, metavar='E', help='Number of test episodes')
 parser.add_argument('--checkpoint-interval', type=int, default=10, metavar='I', help='Checkpoint interval (episodes)')
 parser.add_argument('--checkpoint-experience', action='store_true', help='Checkpoint experience replay')
 parser.add_argument('--models', type=str, default='', metavar='M', help='Load model checkpoint')
 parser.add_argument('--experience-replay', type=str, default='', metavar='ER', help='Load experience replay')
 parser.add_argument('--render', action='store_true', help='Render environment')
+parser.add_argument('--writername', default='exp', help='summary writer name')
 args = parser.parse_args()
 args.overshooting_distance = min(args.chunk_size, args.overshooting_distance)  # Overshooting distance cannot be greater than chunk size
+
+writer_name = args.writername
+writer = SummaryWriter('runs/'+writer_name)
 print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
   print(' ' * 26 + k + ': ' + str(v))
@@ -94,6 +97,7 @@ elif not args.test:
   D = ExperienceReplay(args.experience_size, args.symbolic_env, env.observation_size, env.action_size, args.bit_depth, args.device)
   # Initialise dataset D with S random seed episodes
   for s in range(1, args.seed_episodes + 1):
+    print("seeding episode :", s)
     observation, done, t = env.reset(), False, 0
     while not done:
       action = env.sample_random_action()
@@ -149,8 +153,6 @@ if args.test:
       for t in pbar:
         belief, posterior_state, action, observation, reward, done = update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device))
         total_reward += reward
-        if args.render:
-          env.render()
         if done:
           pbar.close()
           break
@@ -297,8 +299,8 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
   # Checkpoint models
   if episode % args.checkpoint_interval == 0:
     torch.save({'transition_model': transition_model.state_dict(), 'observation_model': observation_model.state_dict(), 'encoder': encoder.state_dict(), 'optimiser': optimiser.state_dict()}, os.path.join(results_dir, 'models_%d.pth' % episode))
-    if args.checkpoint_experience:
-      torch.save(D, os.path.join(results_dir, 'experience.pth'))  # Warning: will fail with MemoryError with large memory sizes
+    # if args.checkpoint_experience:
+    #   torch.save(D, os.path.join(results_dir, 'experience.pth'))  # Warning: will fail with MemoryError with large memory sizes
 
 
 # Close training environment
