@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import torch
+import ipdb 
+st = ipdb.set_trace
 
 
 GYM_ENVS = ['Pendulum-v0', 'MountainCarContinuous-v0', 'Ant-v2', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2', 'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Reacher-v2', 'Swimmer-v2', 'Walker2d-v2']
@@ -10,18 +12,25 @@ PUSH_ENVS = ['PushTask']
 
 # Preprocesses an observation inplace (from float32 Tensor [0, 255] to [-0.5, 0.5])
 def preprocess_observation_(observation, bit_depth):
+  # return observation
   observation.div_(2 ** (8 - bit_depth)).floor_().div_(2 ** bit_depth).sub_(0.5)  # Quantise to given bit depth and centre
   observation.add_(torch.rand_like(observation).div_(2 ** bit_depth))  # Dequantise (to approx. match likelihood of PDF of continuous images vs. PMF of discrete images)
 
 
 # Postprocess an observation for storage (from float32 numpy array [-0.5, 0.5] to uint8 numpy array [0, 255])
 def postprocess_observation(observation, bit_depth):
-  return np.clip(np.floor((observation + 0.5) * 2 ** bit_depth) * 2 ** (8 - bit_depth), 0, 2 ** 8 - 1).astype(np.uint8)
+  # st()
+  return observation
+  # return np.clip(np.floor((observation + 0.5) * 2 ** bit_depth) * 2 ** (8 - bit_depth), 0, 2 ** 8 - 1).astype(np.uint8)
 
 
-def _images_to_observation(images, bit_depth):
+def _images_to_observation(images, bit_depth, writer=None, writer_cntr=None):
   images = torch.tensor(cv2.resize(images, (64, 64), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1), dtype=torch.float32)  # Resize and put channel first
+  if writer != None:
+    writer.add_image('before_preprocessed_rgb', images, writer_cntr)
   preprocess_observation_(images, bit_depth)  # Quantise, centre and dequantise inplace
+  if writer != None:
+    writer.add_image('after_preprocessed_rgb', images, writer_cntr)
   return images.unsqueeze(dim=0)  # Add batch dimension
 
 
@@ -88,7 +97,7 @@ class ControlSuiteEnv():
 
 
 class PushTaskEnv():
-  def __init__(self, max_episode_length, bit_depth):
+  def __init__(self, max_episode_length, bit_depth, writer):
     from PushImageInput import PushImageInput
     self._env = PushImageInput()
     self.max_episode_length = max_episode_length #should be 6
@@ -96,18 +105,21 @@ class PushTaskEnv():
     self.bit_depth = bit_depth
     self.sequence_num = 0 #points to where we are in given episode.
     self.inputs = None # The inputs returned by PushImageInput
+    self.writer = writer
+    self.writer_cntr = 0
 
   def reset(self):
     self.t = 0  # Reset internal timer
     self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
     push_data = self._env.data(0)
     self.inputs = push_data.inputs
-
-    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth)
+    self.writer.add_image('fetched_rgb', self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
+    self.writer_cntr+=1
+    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr)
   
   def getBatch(self):
     push_data = self._env.data(0)
-    
+
   def step(self, action):
     action = action.detach().numpy()
     reward = 0
@@ -192,9 +204,9 @@ class GymEnv():
     return torch.from_numpy(self._env.action_space.sample())
 
 
-def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
+def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer):
   if env in PUSH_ENVS:
-    return PushTaskEnv(max_episode_length, bit_depth)
+    return PushTaskEnv(max_episode_length, bit_depth, writer)
   if env in GYM_ENVS:
     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
   elif env in CONTROL_SUITE_ENVS:

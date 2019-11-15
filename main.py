@@ -26,7 +26,7 @@ parser.add_argument('--id', type=str, default='default', help='Experiment ID')
 parser.add_argument('--seed', type=int, default=1, metavar='S', help='Random seed')
 parser.add_argument('--disable-cuda', action='store_true', help='Disable CUDA')
 parser.add_argument('--env', type=str, default='PushTask', choices=GYM_ENVS + CONTROL_SUITE_ENVS, help='Gym/Control Suite environment')
-parser.add_argument('--symbolic-env', action='store_false', help='Symbolic features')
+parser.add_argument('--symbolic-env', default=False, help='Symbolic features')
 parser.add_argument('--max-episode-length', type=int, default=4, metavar='T', help='Max episode length')
 parser.add_argument('--experience-size', type=int, default=1000000, metavar='D', help='Experience replay size')  # Original implementation has an unlimited buffer size, but 1 million is the max experience collected anyway
 parser.add_argument('--activation-function', type=str, default='relu', choices=dir(F), help='Model activation function')
@@ -37,7 +37,7 @@ parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='Sta
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
 parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
-parser.add_argument('--seed-episodes', type=int, default=200, metavar='S', help='Seed episodes')
+parser.add_argument('--seed-episodes', type=int, default=2, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
 parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
@@ -89,7 +89,7 @@ metrics = {'steps': [], 'episodes': [], 'train_rewards': [], 'test_episodes': []
 
 
 # Initialise training environment and experience replay memory
-env = Env(args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth)
+env = Env(args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth, writer)
 if args.experience_replay is not '' and os.path.exists(args.experience_replay):
   D = torch.load(args.experience_replay)
   metrics['steps'], metrics['episodes'] = [D.steps] * D.episodes, list(range(1, D.episodes + 1))
@@ -99,10 +99,13 @@ elif not args.test:
   for s in range(1, args.seed_episodes + 1):
     print("seeding episode :", s)
     observation, done, t = env.reset(), False, 0
+    # st()
+    writer.add_image('seeded_rgb', observation[0], s)
     while not done:
       action = env.sample_random_action()
       next_observation, reward, done = env.step(action)
-      D.append(observation, action, reward, done)
+      writer.add_image('seeded_rgb_step', next_observation[0], s)
+      D.append(observation, action, reward, done, writer, s)
       observation = next_observation
       t += 1
     metrics['steps'].append(t * args.action_repeat + (0 if len(metrics['steps']) == 0 else metrics['steps'][-1]))
@@ -172,6 +175,11 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
       pass
     # Draw sequence chunks {(o_t, a_t, r_t+1, terminal_t+1)} ~ D uniformly at random from the dataset (including terminal flags)
     observations, actions, rewards, nonterminals = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
+    # st()
+    # if counter%10 == 0:
+    # st()
+    writer.add_image('input_rgb_1', observations[0,0], counter)
+    writer.add_image('input_rgb_2', observations[1,0], counter)
     # Create initial belief and state for time t = 0
     init_belief, init_state = torch.zeros(args.batch_size, args.belief_size, device=args.device), torch.zeros(args.batch_size, args.state_size, device=args.device)
     # Update belief/state using posterior from previous belief/state, previous action and current observation (over entire sequence at once)
