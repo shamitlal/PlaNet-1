@@ -101,7 +101,7 @@ class ControlSuiteEnv():
 
 
 class PushTaskEnv():
-  def __init__(self, max_episode_length, bit_depth, writer, datamod):
+  def __init__(self, max_episode_length, bit_depth, writer=None, datamod=None):
     from PushImageInput import PushImageInput
     self._env = PushImageInput(datamod)
     self.max_episode_length = max_episode_length #should be 6
@@ -112,13 +112,13 @@ class PushTaskEnv():
     self.writer = writer
     self.writer_cntr = 0
 
-  def reset(self):
+  def reset(self, mode=0):
     self.t = 0  # Reset internal timer
     self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
-    push_data = self._env.data(0)
+    push_data = self._env.data(mode)
     self.inputs = push_data.inputs
     if self.writer != None:
-      self.writer.add_image('fetched_rgb', self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
+      self.writer.add_image('fetched_rgb_mode_'+str(mode), self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
     self.writer_cntr+=1
     return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr)
   

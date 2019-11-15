@@ -37,7 +37,7 @@ parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='Sta
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
 parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
-parser.add_argument('--seed-episodes', type=int, default=500, metavar='S', help='Seed episodes')
+parser.add_argument('--seed-episodes', type=int, default=2, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
 parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
@@ -57,7 +57,7 @@ parser.add_argument('--optimisation-iters', type=int, default=10, metavar='I', h
 parser.add_argument('--candidates', type=int, default=1000, metavar='J', help='Candidate samples per iteration')
 parser.add_argument('--top-candidates', type=int, default=100, metavar='K', help='Number of top candidates to fit')
 parser.add_argument('--test', action='store_true', help='Test only')
-parser.add_argument('--test-interval', type=int, default=200, metavar='I', help='Test interval (episodes)')
+parser.add_argument('--test-interval', type=int, default=1, metavar='I', help='Test interval (episodes)')
 parser.add_argument('--test-episodes', type=int, default=1, metavar='E', help='Number of test episodes')
 parser.add_argument('--checkpoint-interval', type=int, default=10, metavar='I', help='Checkpoint interval (episodes)')
 parser.add_argument('--checkpoint-experience', action='store_true', help='Checkpoint experience replay')
@@ -275,31 +275,32 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # reward_model.eval()
     encoder.eval()
     # Initialise parallelised test environments
-    test_envs = EnvBatcher(Env, (args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth), {}, args.test_episodes)
-    
+    # test_envs = EnvBatcher(Env, (args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth), {}, args.test_episodes, args.datamod)
+    test_envs = PushTaskEnv(args.max_episode_length, args.bit_depth, writer, args.datamod)
     with torch.no_grad():
-      observation, total_rewards, video_frames = test_envs.reset(), np.zeros((args.test_episodes, )), []
+      observation, total_rewards, video_frames = test_envs.reset(mode=1), np.zeros((args.test_episodes, )), []
       belief, posterior_state, action = torch.zeros(args.test_episodes, args.belief_size, device=args.device), torch.zeros(args.test_episodes, args.state_size, device=args.device), torch.zeros(args.test_episodes, env.action_size, device=args.device)
       pbar = tqdm(range(args.max_episode_length // args.action_repeat))
       for t in pbar:
         belief, posterior_state, action, next_observation, reward, done = update_belief_and_act(args, test_envs, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device))
-        total_rewards += reward.numpy()
-        if not args.symbolic_env:  # Collect real vs. predicted frames for video
-          video_frames.append(make_grid(torch.cat([observation, observation_model(belief, posterior_state).cpu()], dim=3) + 0.5, nrow=5).numpy())  # Decentre
+        # total_rewards += reward.numpy()
+        # if not args.symbolic_env:  # Collect real vs. predicted frames for video
+        video_frames.append(make_grid(torch.cat([observation, observation_model(belief, posterior_state).cpu()], dim=3) + 0.5, nrow=5).numpy())  # Decentre
         observation = next_observation
-        if done.sum().item() == args.test_episodes:
-          pbar.close()
-          break
+        # st()
+        # if done.sum().item() == args.test_episodes:
+        #   pbar.close()
+        #   break
     
     # Update and plot reward metrics (and write video if applicable) and save metrics
     metrics['test_episodes'].append(episode)
     metrics['test_rewards'].append(total_rewards.tolist())
     lineplot(metrics['test_episodes'], metrics['test_rewards'], 'test_rewards', results_dir)
     lineplot(np.asarray(metrics['steps'])[np.asarray(metrics['test_episodes']) - 1], metrics['test_rewards'], 'test_rewards_steps', results_dir, xaxis='step')
-    if not args.symbolic_env:
-      episode_str = str(episode).zfill(len(str(args.episodes)))
-      write_video(video_frames, 'test_episode_%s' % episode_str, results_dir)  # Lossy compression
-      save_image(torch.as_tensor(video_frames[-1]), os.path.join(results_dir, 'test_episode_%s.png' % episode_str))
+    # if not args.symbolic_env:
+    episode_str = str(episode).zfill(len(str(args.episodes)))
+    write_video(video_frames, 'test_episode_%s' % episode_str, results_dir)  # Lossy compression
+    save_image(torch.as_tensor(video_frames[-1]), os.path.join(results_dir, 'test_episode_%s.png' % episode_str))
     torch.save(metrics, os.path.join(results_dir, 'metrics.pth'))
 
     # Set models to train mode
@@ -308,7 +309,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # reward_model.train()
     encoder.train()
     # Close test environments
-    test_envs.close()
+    # test_envs.close()
 
 
   # Checkpoint models
