@@ -117,7 +117,8 @@ class PushTaskEnv():
     self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
     push_data = self._env.data(0)
     self.inputs = push_data.inputs
-    self.writer.add_image('fetched_rgb', self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
+    if self.writer != None:
+      self.writer.add_image('fetched_rgb', self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
     self.writer_cntr+=1
     return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr)
   
@@ -208,7 +209,7 @@ class GymEnv():
     return torch.from_numpy(self._env.action_space.sample())
 
 
-def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer, datamod):
+def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer=None, datamod=None):
   if env in PUSH_ENVS:
     return PushTaskEnv(max_episode_length, bit_depth, writer, datamod)
   if env in GYM_ENVS:
