@@ -13,51 +13,40 @@ from PushInput_io import PushInput_io
 import ipdb
 st=ipdb.set_trace
 
+class Config:
+    def __init__(self):
+        self.NUM_VIEWS=2 # number of views used as inputs
+        self.NUM_PREDS=1 # number of predicted views
+
+        self.N_VIEW = self.NUM_VIEWS + self.NUM_PREDS
+        self.N_CAM = 27
+        self.H = 128
+        self.W = 128
+        self.T_TRAJ = 6 # length of trajectory in input data
+        self.V = 20000
+        self.MIN_DEPTH_RANGE = 5
+        self.MAX_DEPTH_RANGE = 21
+
 class PushImageInput:
     def __init__(self):
         self.data_io = PushInput_io()
+        self.config = Config()
     
     def data(self, index):
         inputs = self.data_io.data(index)
         inputs = self.get_front_and_side(inputs)
 
         inputs = self.extract_rand_views(inputs)
-        inputs = self.depth2xyz(inputs)
-        
         inputs.rgb_camXs = self.resize(inputs.rgb_camXs)
         inputs = self.misc(inputs)
-        # this is for
-        """
-        #for old data
-        xyzorn_objects_btn = inputs.xyzorn_objects
-        xyzorn_objects_bullet = self.xyzorn_transform_inv(xyzorn_objects_btn, xyz_class=inputs.object_class)
-        xyzorn_adam = self.bulletxyz_to_adamxyz(xyzorn_objects_bullet)
-        inputs.xyzorn_objects = xyzorn_adam
 
-
-
-        xyzorn_agent_btn = inputs.xyzorn_agent
-        xyzorn_agent_bullet = self.xyzorn_transform_inv(xyzorn_agent_btn)
-        xyzorn_agent_adam = self.bulletxyz_to_adamxyz(xyzorn_agent_bullet)
-        inputs.xyzorn_agent = xyzorn_agent_adam
-        """
-
-        #print(inputs["actions"])
-        #self.visualize_data(inputs, batch_id=0)
-        #st()
-        # inputs now has elements of shape [B, T, N_VIEW, ...], we pick first element along T axis for view prediction
-
-        # compute xyz_camXs here since this step cannot be addded to data.map() in _io.py
-
-        data = Munch(inputs=self.make_inputs(inputs),
-                     target=self.make_target(inputs),
-                     extra=self.make_extra(inputs))
+        data = Munch(inputs=self.make_inputs(inputs))
         return data
 
     def get_delta(self, xyzorn, xyzorn_after):
 
-        xyz, orn, vel = utils.basic.split_states(xyzorn, mode="h13")
-        xyz_after, orn_after, vel_after = utils.basic.split_states(xyzorn_after, mode="h13")
+        xyz, orn, vel = self.split_states(xyzorn, mode="h13")
+        xyz_after, orn_after, vel_after = self.split_states(xyzorn_after, mode="h13")
 
         delta_xyz = xyz_after - xyz
         quat1 = tfq.Quaternion(orn)
@@ -68,6 +57,17 @@ class PushImageInput:
         delta_vel =  vel_after - vel
         return tf.concat([delta_xyz, delta_quat, delta_vel], 3)
 
+    def split_states(self, states, mode="h13"):
+        """
+        if mode == "obj_agent":
+            return states[..., :self.nobjs, :], states[..., self.nobjs:, :]
+        """
+        if mode == "h13":
+            # xyz(3), orn(4), velv(6)
+            return states[..., :3], states[..., 3:7], states[..., 7:]
+        else:
+            raise Exception(f"data format is not supported: {mode}")
+
     def make_inputs(self, data):
         # use only the first N_VIEWS as inputs
         N_INPUT_VIEWS = self.config.N_VIEW - 1
@@ -75,7 +75,6 @@ class PushImageInput:
 
         return Munch(rgb_camXs=data["rgb_camXs"][:, :T_TRAJ_1, :N_INPUT_VIEWS],
                      rgbvalid_camXs=data["rgbvalid_camXs"][:, :T_TRAJ_1, :N_INPUT_VIEWS],
-                     xyz_camXs=data["xyz_camXs"][:, :T_TRAJ_1, :N_INPUT_VIEWS],
                      pix_T_cams = data["pix_T_cams"][:, :T_TRAJ_1, :N_INPUT_VIEWS],
                      origin_T_camXs = data["origin_T_camXs"][:, :T_TRAJ_1, :N_INPUT_VIEWS],
                      xyzorn_objects = data["xyzorn_objects"][:, :T_TRAJ_1, :, :], #B X T_TRAJ_1 X N_OBJS X 13
@@ -100,7 +99,6 @@ class PushImageInput:
 
         return Munch(rgb_camXs=data["rgb_camXs"][:, :, N_INPUT_VIEWS:],
                 rgbvalid_camXs=data["rgbvalid_camXs"][:, :, N_INPUT_VIEWS:],
-                xyz_camXs=data["xyz_camXs"][:, :, N_INPUT_VIEWS:],
                 pix_T_cams = data["pix_T_cams"][:, :, N_INPUT_VIEWS:],
                 origin_T_camXs = data["origin_T_camXs"][:, :, N_INPUT_VIEWS:],
                 xyzorn_objects = data["xyzorn_objects"][:, 1:, :, :], #B X T_TRAJ_1 X N_OBJS X 13
@@ -365,21 +363,6 @@ class PushImageInput:
 
         return xyzorn_btn
 
-    def depth2xyz(self, inputs):
-        B, T_TRAJ, N_VIEWS, _, _, _ = inputs["rgb_camXs"].shape
-        __p = lambda x: utils.basic.pack_seqdim(x, B)
-        __u = lambda x: utils.basic.unpack_seqdim(x, B)
-
-        depth_camXs_btn_ = __p(inputs.depth_camXs)
-        pix_T_cams_btn_ = __p(inputs.pix_T_cams)
-
-        xyz_camXs_btn_ = self.compute_xyz( depth_camXs_btn_, pix_T_cams_btn_)
-        xyz_camXs_btn = __u(xyz_camXs_btn_)
-
-        inputs.xyz_camXs = xyz_camXs_btn
-        return inputs
-
-
     def compute_xyz(self, depth_camXs_bn, pix_T_cams_bn):
         '''
         depth_camXs_batch: [B, N_VIEW, H, W, 1]
@@ -388,8 +371,8 @@ class PushImageInput:
 
         B, N_VIEW, H, W, _  = depth_camXs_bn.shape
 
-        __p = lambda x: utils.basic.pack_seqdim(x, B)
-        __u = lambda x: utils.basic.unpack_seqdim(x, B)
+        __p = lambda x: pack_seqdim(x, B)
+        __u = lambda x: unpack_seqdim(x, B)
 
         V = self.config.V
         MIN_DEPTH_RANGE = self.config.MIN_DEPTH_RANGE
@@ -453,3 +436,19 @@ class PushImageInput:
         inputs.rgbvalid_camXs = mask[..., :1]
         return inputs
 
+def pack_seqdim(tensor, B):
+    shapelist = tensor.shape.as_list()
+    B_, S = shapelist[:2]
+    assert(B==B_)
+    otherdims = shapelist[2:]
+    tensor = tf.reshape(tensor, [B*S] + otherdims)
+    return tensor
+    
+def unpack_seqdim(tensor, B):
+    shapelist = tensor.get_shape().as_list()
+    BS = shapelist[0]
+    otherdims = shapelist[1:]
+    assert(BS % B == 0)
+    S = int(BS/B)
+    tensor = tf.reshape(tensor, [B, S] + otherdims)
+    return tensor

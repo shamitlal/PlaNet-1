@@ -6,7 +6,7 @@ import torch
 GYM_ENVS = ['Pendulum-v0', 'MountainCarContinuous-v0', 'Ant-v2', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2', 'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Reacher-v2', 'Swimmer-v2', 'Walker2d-v2']
 CONTROL_SUITE_ENVS = ['cartpole-balance', 'cartpole-swingup', 'reacher-easy', 'finger-spin', 'cheetah-run', 'ball_in_cup-catch', 'walker-walk']
 CONTROL_SUITE_ACTION_REPEATS = {'cartpole': 8, 'reacher': 4, 'finger': 2, 'cheetah': 4, 'ball_in_cup': 6, 'walker': 2}
-
+PUSH_ENVS = ['PushTask']
 
 # Preprocesses an observation inplace (from float32 Tensor [0, 255] to [-0.5, 0.5])
 def preprocess_observation_(observation, bit_depth):
@@ -88,30 +88,31 @@ class ControlSuiteEnv():
 
 
 class PushTaskEnv():
-  def __init__(self, max_episode_length, bit_depth,B):
-    self.B = B
+  def __init__(self, max_episode_length, bit_depth):
     from PushImageInput import PushImageInput
     self._env = PushImageInput()
     self.max_episode_length = max_episode_length #should be 6
     self.action_repeat = 1
     self.bit_depth = bit_depth
+    self.sequence_num = 0 #points to where we are in given episode.
+    self.inputs = None # The inputs returned by PushImageInput
 
   def reset(self):
     self.t = 0  # Reset internal timer
-    return _images_to_observation(self._env.render(mode='rgb_array'), self.bit_depth)
+    self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
+    push_data = self._env.data(0)
+    self.inputs = push_data.inputs
+
+    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth)
   
   def step(self, action):
     action = action.detach().numpy()
     reward = 0
-    for k in range(self.action_repeat):
-      state, reward_k, done, _ = self._env.step(action)
-      reward += reward_k
-      self.t += 1  # Increment internal timer
-      done = done or self.t == self.max_episode_length
-      if done:
-        break
-    
-    observation = _images_to_observation(self._env.render(mode='rgb_array'), self.bit_depth)
+    done = False # We will never exceed sequence length for push task.
+    observation = _images_to_observation(self.inputs.rgb_camXs.numpy()[0,self.sequence_num,0], self.bit_depth)
+    self.sequence_num += 1 
+    if self.sequence_num == self.max_episode_length:
+      done = True
     return observation, reward, done
 
   @property
@@ -126,10 +127,10 @@ class PushTaskEnv():
     '''
     return 3
 
-  # Sample an action randomly from a uniform distribution over all valid actions
   def sample_random_action(self):
-    rand_np = np.random.uniform(-0.3, 0.3, (self.B, 5, 3))
-    return torch.from_numpy(rand_np)
+    return torch.from_numpy(self.inputs.actions.numpy()[0, self.sequence_num-1])
+    # rand_np = np.random.uniform(-0.3, 0.3, (3))
+    # return torch.from_numpy(rand_np)
 
 
 
@@ -189,6 +190,8 @@ class GymEnv():
 
 
 def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
+  if env in PUSH_ENVS:
+    return PushTaskEnv(max_episode_length, bit_depth)
   if env in GYM_ENVS:
     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
   elif env in CONTROL_SUITE_ENVS:

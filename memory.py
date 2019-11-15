@@ -1,14 +1,19 @@
 import numpy as np
 import torch
 from env import postprocess_observation, preprocess_observation_
-
+import ipdb 
+st = ipdb.set_trace
 
 class ExperienceReplay():
   def __init__(self, size, symbolic_env, observation_size, action_size, bit_depth, device):
     self.device = device
     self.symbolic_env = symbolic_env
     self.size = size
-    self.observations = np.empty((size, observation_size) if symbolic_env else (size, 3, 64, 64), dtype=np.float32 if symbolic_env else np.uint8)
+    st()
+    # self.observations = np.empty((size, observation_size) if symbolic_env else (size, 3, 64, 64), dtype=np.float32 if symbolic_env else np.uint8)
+    # if symbolic_env:
+    #   self.observations = np.empty((size, observation_size), dtype=np.float32)
+    self.observations = np.empty((size, 3, 64, 64), dtype = np.uint8)
     self.actions = np.empty((size, action_size), dtype=np.float32)
     self.rewards = np.empty((size, ), dtype=np.float32) 
     self.nonterminals = np.empty((size, 1), dtype=np.float32)

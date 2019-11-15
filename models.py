@@ -18,7 +18,7 @@ class TransitionModel(jit.ScriptModule):
 
   def __init__(self, belief_size, state_size, action_size, hidden_size, embedding_size, activation_function='relu', min_std_dev=0.1):
     super().__init__()
-    st()
+    # st()
     self.act_fn = getattr(F, activation_function)
     self.min_std_dev = min_std_dev
     self.fc_embed_state_action = nn.Linear(state_size + action_size, belief_size)
@@ -111,10 +111,10 @@ class VisualObservationModel(jit.ScriptModule):
 
 
 def ObservationModel(symbolic, observation_size, belief_size, state_size, embedding_size, activation_function='relu'):
-  if symbolic:
-    return SymbolicObservationModel(observation_size, belief_size, state_size, embedding_size, activation_function)
-  else:
-    return VisualObservationModel(belief_size, state_size, embedding_size, activation_function)
+  # if symbolic:
+  #   return SymbolicObservationModel(observation_size, belief_size, state_size, embedding_size, activation_function)
+  # else:
+  return VisualObservationModel(belief_size, state_size, embedding_size, activation_function)
 
 
 class RewardModel(jit.ScriptModule):
@@ -174,7 +174,7 @@ class VisualEncoder(jit.ScriptModule):
 
 
 def Encoder(symbolic, observation_size, embedding_size, activation_function='relu'):
-  if symbolic:
-    return SymbolicEncoder(observation_size, embedding_size, activation_function)
-  else:
-    return VisualEncoder(embedding_size, activation_function)
+  # if symbolic:
+  #   return SymbolicEncoder(observation_size, embedding_size, activation_function)
+  # else:
+  return VisualEncoder(embedding_size, activation_function)

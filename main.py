@@ -15,29 +15,34 @@ from planner import MPCPlanner
 from utils import lineplot, write_video
 import ipdb 
 st = ipdb.set_trace
+from tensorboardX import SummaryWriter
+#SummaryWriter encapsulates everything
+import sys 
+arg1 = "exp3"
+writer = SummaryWriter('runs/'+arg1)
 
 # Hyperparameters
 parser = argparse.ArgumentParser(description='PlaNet')
 parser.add_argument('--id', type=str, default='default', help='Experiment ID')
 parser.add_argument('--seed', type=int, default=1, metavar='S', help='Random seed')
 parser.add_argument('--disable-cuda', action='store_true', help='Disable CUDA')
-parser.add_argument('--env', type=str, default='Pendulum-v0', choices=GYM_ENVS + CONTROL_SUITE_ENVS, help='Gym/Control Suite environment')
+parser.add_argument('--env', type=str, default='PushTask', choices=GYM_ENVS + CONTROL_SUITE_ENVS, help='Gym/Control Suite environment')
 parser.add_argument('--symbolic-env', action='store_false', help='Symbolic features')
-parser.add_argument('--max-episode-length', type=int, default=1000, metavar='T', help='Max episode length')
+parser.add_argument('--max-episode-length', type=int, default=4, metavar='T', help='Max episode length')
 parser.add_argument('--experience-size', type=int, default=1000000, metavar='D', help='Experience replay size')  # Original implementation has an unlimited buffer size, but 1 million is the max experience collected anyway
 parser.add_argument('--activation-function', type=str, default='relu', choices=dir(F), help='Model activation function')
 parser.add_argument('--embedding-size', type=int, default=1024, metavar='E', help='Observation embedding size')  # Note that the default encoder for visual observations outputs a 1024D vector; for other embedding sizes an additional fully-connected layer is used
 parser.add_argument('--hidden-size', type=int, default=200, metavar='H', help='Hidden size')
 parser.add_argument('--belief-size', type=int, default=200, metavar='H', help='Belief/hidden size')
 parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='State/latent size')
-parser.add_argument('--action-repeat', type=int, default=2, metavar='R', help='Action repeat')
+parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
 parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
-parser.add_argument('--seed-episodes', type=int, default=5, metavar='S', help='Seed episodes')
+parser.add_argument('--seed-episodes', type=int, default=1000, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
-parser.add_argument('--batch-size', type=int, default=50, metavar='B', help='Batch size')
-parser.add_argument('--chunk-size', type=int, default=50, metavar='L', help='Chunk size')
-parser.add_argument('--overshooting-distance', type=int, default=50, metavar='D', help='Latent overshooting distance/latent overshooting weight for t = 1')
+parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
+parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
+parser.add_argument('--overshooting-distance', type=int, default=4, metavar='D', help='Latent overshooting distance/latent overshooting weight for t = 1')
 parser.add_argument('--overshooting-kl-beta', type=float, default=0, metavar='β>1', help='Latent overshooting KL weight for t > 1 (0 to disable)')
 parser.add_argument('--overshooting-reward-scale', type=float, default=0, metavar='R>1', help='Latent overshooting reward prediction weight for t > 1 (0 to disable)')
 parser.add_argument('--global-kl-beta', type=float, default=0, metavar='βg', help='Global KL weight (0 to disable)')
@@ -53,9 +58,9 @@ parser.add_argument('--optimisation-iters', type=int, default=10, metavar='I', h
 parser.add_argument('--candidates', type=int, default=1000, metavar='J', help='Candidate samples per iteration')
 parser.add_argument('--top-candidates', type=int, default=100, metavar='K', help='Number of top candidates to fit')
 parser.add_argument('--test', action='store_true', help='Test only')
-parser.add_argument('--test-interval', type=int, default=25, metavar='I', help='Test interval (episodes)')
+parser.add_argument('--test-interval', type=int, default=20, metavar='I', help='Test interval (episodes)')
 parser.add_argument('--test-episodes', type=int, default=10, metavar='E', help='Number of test episodes')
-parser.add_argument('--checkpoint-interval', type=int, default=50, metavar='I', help='Checkpoint interval (episodes)')
+parser.add_argument('--checkpoint-interval', type=int, default=10, metavar='I', help='Checkpoint interval (episodes)')
 parser.add_argument('--checkpoint-experience', action='store_true', help='Checkpoint experience replay')
 parser.add_argument('--models', type=str, default='', metavar='M', help='Load model checkpoint')
 parser.add_argument('--experience-replay', type=str, default='', metavar='ER', help='Load experience replay')
@@ -104,13 +109,13 @@ transition_model = TransitionModel(args.belief_size, args.state_size, env.action
 observation_model = ObservationModel(args.symbolic_env, env.observation_size, args.belief_size, args.state_size, args.embedding_size, args.activation_function).to(device=args.device)
 reward_model = RewardModel(args.belief_size, args.state_size, args.hidden_size, args.activation_function).to(device=args.device)
 encoder = Encoder(args.symbolic_env, env.observation_size, args.embedding_size, args.activation_function).to(device=args.device)
-param_list = list(transition_model.parameters()) + list(observation_model.parameters()) + list(reward_model.parameters()) + list(encoder.parameters())
+param_list = list(transition_model.parameters()) + list(observation_model.parameters()) + list(encoder.parameters())
 optimiser = optim.Adam(param_list, lr=0 if args.learning_rate_schedule != 0 else args.learning_rate, eps=args.adam_epsilon)
 if args.models is not '' and os.path.exists(args.models):
   model_dicts = torch.load(args.models)
   transition_model.load_state_dict(model_dicts['transition_model'])
   observation_model.load_state_dict(model_dicts['observation_model'])
-  reward_model.load_state_dict(model_dicts['reward_model'])
+  # reward_model.load_state_dict(model_dicts['reward_model'])
   encoder.load_state_dict(model_dicts['encoder'])
   optimiser.load_state_dict(model_dicts['optimiser'])
 planner = MPCPlanner(env.action_size, args.planning_horizon, args.optimisation_iters, args.candidates, args.top_candidates, transition_model, reward_model)
@@ -133,7 +138,7 @@ def update_belief_and_act(args, env, planner, transition_model, encoder, belief,
 if args.test:
   # Set models to eval mode
   transition_model.eval()
-  reward_model.eval()
+  # reward_model.eval()
   encoder.eval()
   with torch.no_grad():
     total_reward = 0
@@ -149,16 +154,20 @@ if args.test:
         if done:
           pbar.close()
           break
-  print('Average Reward:', total_reward / args.test_episodes)
+  # print('Average Reward:', total_reward / args.test_episodes)
   env.close()
   quit()
 
-
+counter = 0
 # Training (and testing)
 for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total=args.episodes, initial=metrics['episodes'][-1] + 1):
   # Model fitting
   losses = []
+  # st()
   for s in tqdm(range(args.collect_interval)):
+    counter +=1
+    if s>=100:
+      pass
     # Draw sequence chunks {(o_t, a_t, r_t+1, terminal_t+1)} ~ D uniformly at random from the dataset (including terminal flags)
     observations, actions, rewards, nonterminals = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
     # Create initial belief and state for time t = 0
@@ -167,7 +176,8 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], )), nonterminals[:-1])
     # Calculate observation likelihood, reward likelihood and KL losses (for t = 0 only for latent overshooting); sum over final dims, average over batch and time (original implementation, though paper seems to miss 1/T scaling?)
     observation_loss = F.mse_loss(bottle(observation_model, (beliefs, posterior_states)), observations[1:], reduction='none').sum(dim=2 if args.symbolic_env else (2, 3, 4)).mean(dim=(0, 1))
-    reward_loss = F.mse_loss(bottle(reward_model, (beliefs, posterior_states)), rewards[:-1], reduction='none').mean(dim=(0, 1))
+    # reward_loss = F.mse_loss(bottle(reward_model, (beliefs, posterior_states)), rewards[:-1], reduction='none').mean(dim=(0, 1))
+    reward_loss = 0
     kl_loss = torch.max(kl_divergence(Normal(posterior_means, posterior_std_devs), Normal(prior_means, prior_std_devs)).sum(dim=2), free_nats).mean(dim=(0, 1))  # Note that normalisation by overshooting distance and weighting by overshooting distance cancel out
     if args.global_kl_beta != 0:
       kl_loss += args.global_kl_beta * kl_divergence(Normal(posterior_means, posterior_std_devs), global_prior).sum(dim=2).mean(dim=(0, 1))
@@ -187,8 +197,8 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
       # Calculate overshooting KL loss with sequence mask
       kl_loss += (1 / args.overshooting_distance) * args.overshooting_kl_beta * torch.max((kl_divergence(Normal(torch.cat(overshooting_vars[5], dim=1), torch.cat(overshooting_vars[6], dim=1)), Normal(prior_means, prior_std_devs)) * seq_mask).sum(dim=2), free_nats).mean(dim=(0, 1)) * (args.chunk_size - 1)  # Update KL loss (compensating for extra average over each overshooting/open loop sequence) 
       # Calculate overshooting reward prediction loss with sequence mask
-      if args.overshooting_reward_scale != 0:
-        reward_loss += (1 / args.overshooting_distance) * args.overshooting_reward_scale * F.mse_loss(bottle(reward_model, (beliefs, prior_states)) * seq_mask[:, :, 0], torch.cat(overshooting_vars[2], dim=1), reduction='none').mean(dim=(0, 1)) * (args.chunk_size - 1)  # Update reward loss (compensating for extra average over each overshooting/open loop sequence) 
+      # if args.overshooting_reward_scale != 0:
+      #   reward_loss += (1 / args.overshooting_distance) * args.overshooting_reward_scale * F.mse_loss(bottle(reward_model, (beliefs, prior_states)) * seq_mask[:, :, 0], torch.cat(overshooting_vars[2], dim=1), reduction='none').mean(dim=(0, 1)) * (args.chunk_size - 1)  # Update reward loss (compensating for extra average over each overshooting/open loop sequence) 
 
     # Apply linearly ramping learning rate schedule
     if args.learning_rate_schedule != 0:
@@ -196,19 +206,24 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
         group['lr'] = min(group['lr'] + args.learning_rate / args.learning_rate_schedule, args.learning_rate)
     # Update model parameters
     optimiser.zero_grad()
+    # st()
+    observation_loss = torch.sum(observation_loss)
     (observation_loss + reward_loss + kl_loss).backward()
     nn.utils.clip_grad_norm_(param_list, args.grad_clip_norm, norm_type=2)
     optimiser.step()
     # Store (0) observation loss (1) reward loss (2) KL loss
-    losses.append([observation_loss.item(), reward_loss.item(), kl_loss.item()])
+    writer.add_scalar('observation_loss', observation_loss, counter)
+    writer.add_scalar('kl_loss_loss', kl_loss, counter)
+    losses.append([observation_loss.item(), kl_loss.item()])
+    print("Total loss till now: ",observation_loss.item()+kl_loss.item())
 
   # Update and plot loss metrics
   losses = tuple(zip(*losses))
   metrics['observation_loss'].append(losses[0])
-  metrics['reward_loss'].append(losses[1])
-  metrics['kl_loss'].append(losses[2])
+  # metrics['reward_loss'].append(losses[1])
+  metrics['kl_loss'].append(losses[1])
   lineplot(metrics['episodes'][-len(metrics['observation_loss']):], metrics['observation_loss'], 'observation_loss', results_dir)
-  lineplot(metrics['episodes'][-len(metrics['reward_loss']):], metrics['reward_loss'], 'reward_loss', results_dir)
+  # lineplot(metrics['episodes'][-len(metrics['reward_loss']):], metrics['reward_loss'], 'reward_loss', results_dir)
   lineplot(metrics['episodes'][-len(metrics['kl_loss']):], metrics['kl_loss'], 'kl_loss', results_dir)
 
 
@@ -240,7 +255,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # Set models to eval mode
     transition_model.eval()
     observation_model.eval()
-    reward_model.eval()
+    # reward_model.eval()
     encoder.eval()
     # Initialise parallelised test environments
     test_envs = EnvBatcher(Env, (args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth), {}, args.test_episodes)
@@ -273,7 +288,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # Set models to train mode
     transition_model.train()
     observation_model.train()
-    reward_model.train()
+    # reward_model.train()
     encoder.train()
     # Close test environments
     test_envs.close()
@@ -281,7 +296,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
 
   # Checkpoint models
   if episode % args.checkpoint_interval == 0:
-    torch.save({'transition_model': transition_model.state_dict(), 'observation_model': observation_model.state_dict(), 'reward_model': reward_model.state_dict(), 'encoder': encoder.state_dict(), 'optimiser': optimiser.state_dict()}, os.path.join(results_dir, 'models_%d.pth' % episode))
+    torch.save({'transition_model': transition_model.state_dict(), 'observation_model': observation_model.state_dict(), 'encoder': encoder.state_dict(), 'optimiser': optimiser.state_dict()}, os.path.join(results_dir, 'models_%d.pth' % episode))
     if args.checkpoint_experience:
       torch.save(D, os.path.join(results_dir, 'experience.pth'))  # Warning: will fail with MemoryError with large memory sizes
 
