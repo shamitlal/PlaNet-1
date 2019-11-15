@@ -37,7 +37,7 @@ parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='Sta
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
 parser.add_argument('--episodes', type=int, default=1000, metavar='E', help='Total number of episodes')
-parser.add_argument('--seed-episodes', type=int, default=2, metavar='S', help='Seed episodes')
+parser.add_argument('--seed-episodes', type=int, default=500, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
 parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
@@ -185,7 +185,12 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # Update belief/state using posterior from previous belief/state, previous action and current observation (over entire sequence at once)
     beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], )), nonterminals[:-1])
     # Calculate observation likelihood, reward likelihood and KL losses (for t = 0 only for latent overshooting); sum over final dims, average over batch and time (original implementation, though paper seems to miss 1/T scaling?)
+    pred_obs = bottle(observation_model, (beliefs, posterior_states))
+    writer.add_image('output_rgb_1', pred_obs[0,0], counter)
+    writer.add_image('output_rgb_2', pred_obs[1,0], counter)
+    # st()
     observation_loss = F.mse_loss(bottle(observation_model, (beliefs, posterior_states)), observations[1:], reduction='none').sum(dim=2 if args.symbolic_env else (2, 3, 4)).mean(dim=(0, 1))
+    
     # reward_loss = F.mse_loss(bottle(reward_model, (beliefs, posterior_states)), rewards[:-1], reduction='none').mean(dim=(0, 1))
     reward_loss = 0
     kl_loss = torch.max(kl_divergence(Normal(posterior_means, posterior_std_devs), Normal(prior_means, prior_std_devs)).sum(dim=2), free_nats).mean(dim=(0, 1))  # Note that normalisation by overshooting distance and weighting by overshooting distance cancel out
