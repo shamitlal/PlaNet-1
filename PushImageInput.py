@@ -28,8 +28,8 @@ class Config:
         self.MAX_DEPTH_RANGE = 21
 
 class PushImageInput:
-    def __init__(self):
-        self.data_io = PushInput_io()
+    def __init__(self, datamod):
+        self.data_io = PushInput_io(datamod)
         self.config = Config()
     
     def data(self, index):

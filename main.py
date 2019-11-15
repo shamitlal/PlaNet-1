@@ -65,10 +65,12 @@ parser.add_argument('--models', type=str, default='', metavar='M', help='Load mo
 parser.add_argument('--experience-replay', type=str, default='', metavar='ER', help='Load experience replay')
 parser.add_argument('--render', action='store_true', help='Render environment')
 parser.add_argument('--writername', default='exp', help='summary writer name')
+parser.add_argument('--datamod', default='1112_1obj', help='data mod to train on')
+
 args = parser.parse_args()
 args.overshooting_distance = min(args.chunk_size, args.overshooting_distance)  # Overshooting distance cannot be greater than chunk size
 
-writer_name = args.writername
+writer_name = args.id
 writer = SummaryWriter('runs/'+writer_name)
 print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
@@ -89,7 +91,7 @@ metrics = {'steps': [], 'episodes': [], 'train_rewards': [], 'test_episodes': []
 
 
 # Initialise training environment and experience replay memory
-env = Env(args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth, writer)
+env = Env(args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth, writer, args.datamod)
 if args.experience_replay is not '' and os.path.exists(args.experience_replay):
   D = torch.load(args.experience_replay)
   metrics['steps'], metrics['episodes'] = [D.steps] * D.episodes, list(range(1, D.episodes + 1))

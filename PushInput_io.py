@@ -14,27 +14,30 @@ def preprocess_color(x):
     return tf.cast(x,tf.float32) * 1./255 - 0.5
 
 
-dataroot = "/projects/katefgroup/datasets/bullet_push_frontonly"
-dataset_location = f"{dataroot}/1112_1obj"
-data_paths = {
-              "train": f"{dataroot}/1112_1objt.txt", 
-              "val": f"{dataroot}/1112_1objv.txt", 
-              "test": f"{dataroot}/1112_1objv.txt"
-            }
+
+
+
 B = 2
 DEBUG_MODE = False
 
 
 class PushInput_io(TFDataInput):
-    def __init__(self):
+    def __init__(self, datamod):
         super().__init__()
-
+        self.datamod = datamod
+        self.dataroot = "/projects/katefgroup/datasets/bullet_push_frontonly"
+        self.dataset_location = f"{self.dataroot}/{self.datamod}"
+        self.data_paths = {
+              "train": f"{self.dataroot}/{self.datamod}t.txt", 
+              "val": f"{self.dataroot}/{self.datamod}v.txt", 
+              "test": f"{self.dataroot}/{self.datamod}v.txt"
+            }
         # all data share the same basic info
-        self.load_basic_info(dataset_location)
+        self.load_basic_info(self.dataset_location)
         
-        self.train_data = self.make_data(data_paths["train"], True)
-        self.val_data = self.make_data(data_paths["val"], True)
-        self.test_data = self.make_data(data_paths["test"], False, True)
+        self.train_data = self.make_data(self.data_paths["train"], True)
+        self.val_data = self.make_data(self.data_paths["val"], True)
+        self.test_data = self.make_data(self.data_paths["test"], False, True)
 
     def load_basic_info(self, folder):
         with open(path.join(folder, "cam_info.pkl"), "rb") as f:
@@ -45,11 +48,11 @@ class PushInput_io(TFDataInput):
         with open(fn, 'r') as f:
             content = f.readlines()
           
-        records = [dataset_location + '/' + line.strip() for line in content]
+        records = [self.dataset_location + '/' + line.strip() for line in content]
         nRecords = len(records)
         for record in records:
             assert(os.path.isfile(record), f'Record at {record} was not found')
-        print(f'found {nRecords} records in {dataset_location}')
+        print(f'found {nRecords} records in {self.dataset_location}')
 
         data = tf.data.TFRecordDataset(
             records,

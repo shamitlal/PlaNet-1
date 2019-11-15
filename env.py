@@ -101,9 +101,9 @@ class ControlSuiteEnv():
 
 
 class PushTaskEnv():
-  def __init__(self, max_episode_length, bit_depth, writer):
+  def __init__(self, max_episode_length, bit_depth, writer, datamod):
     from PushImageInput import PushImageInput
-    self._env = PushImageInput()
+    self._env = PushImageInput(datamod)
     self.max_episode_length = max_episode_length #should be 6
     self.action_repeat = 1
     self.bit_depth = bit_depth
@@ -208,9 +208,9 @@ class GymEnv():
     return torch.from_numpy(self._env.action_space.sample())
 
 
-def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer):
+def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer, datamod):
   if env in PUSH_ENVS:
-    return PushTaskEnv(max_episode_length, bit_depth, writer)
+    return PushTaskEnv(max_episode_length, bit_depth, writer, datamod)
   if env in GYM_ENVS:
     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
   elif env in CONTROL_SUITE_ENVS:
