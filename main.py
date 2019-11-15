@@ -36,12 +36,9 @@ parser.add_argument('--belief-size', type=int, default=200, metavar='H', help='B
 parser.add_argument('--state-size', type=int, default=30, metavar='Z', help='State/latent size')
 parser.add_argument('--action-repeat', type=int, default=1, metavar='R', help='Action repeat')
 parser.add_argument('--action-noise', type=float, default=0.3, metavar='ε', help='Action noise')
-<<<<<<< HEAD
 parser.add_argument('--episodes', type=int, default=1000000, metavar='E', help='Total number of episodes')
-=======
-parser.add_argument('--episodes', type=int, default=100000, metavar='E', help='Total number of episodes')
->>>>>>> push
-parser.add_argument('--seed-episodes', type=int, default=500, metavar='S', help='Seed episodes')
+
+parser.add_argument('--seed-episodes', type=int, default=2000, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
 parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
@@ -70,7 +67,9 @@ parser.add_argument('--experience-replay', type=str, default='', metavar='ER', h
 parser.add_argument('--render', action='store_true', help='Render environment')
 parser.add_argument('--writername', default='exp', help='summary writer name')
 parser.add_argument('--datamod', default='1112_1obj', help='data mod to train on')
+parser.add_argument('--extrinsics', default=True, help='Use extrinsics or not')
 
+#remeber to change seed-episodes, test-interval, checkpoint-interval, writername, id
 args = parser.parse_args()
 args.overshooting_distance = min(args.chunk_size, args.overshooting_distance)  # Overshooting distance cannot be greater than chunk size
 
@@ -104,14 +103,16 @@ elif not args.test:
   # Initialise dataset D with S random seed episodes
   for s in range(1, args.seed_episodes + 1):
     print("seeding episode :", s)
-    observation, done, t = env.reset(), False, 0
+    observation, extrinsics = env.reset()
+    # st()
+    done, t = False, 0
     # st()
     writer.add_image('seeded_rgb', observation[0], s)
     while not done:
       action = env.sample_random_action()
-      next_observation, reward, done = env.step(action)
+      next_observation, extrinsics, reward, done = env.step(action)
       writer.add_image('seeded_rgb_step', next_observation[0], s)
-      D.append(observation, action, reward, done, writer, s)
+      D.append(observation, action, reward, done, extrinsics, writer, s)
       observation = next_observation
       t += 1
     metrics['steps'].append(t * args.action_repeat + (0 if len(metrics['steps']) == 0 else metrics['steps'][-1]))
@@ -138,15 +139,15 @@ global_prior = Normal(torch.zeros(args.batch_size, args.state_size, device=args.
 free_nats = torch.full((1, ), args.free_nats, device=args.device)  # Allowed deviation in KL divergence
 
 
-def update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation, explore=False):
+def update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation, extrinsics, explore=False):
   # Infer belief over current state q(s_t|o≤t,a<t) from the history
-  belief, _, _, _, posterior_state, _, _ = transition_model(posterior_state, action.unsqueeze(dim=0), belief, encoder(observation).unsqueeze(dim=0))  # Action and observation need extra time dimension
+  belief, _, _, _, posterior_state, _, _ = transition_model(posterior_state, action.unsqueeze(dim=0), belief, encoder(observation, extrinsics).unsqueeze(dim=0))  # Action and observation need extra time dimension
   belief, posterior_state = belief.squeeze(dim=0), posterior_state.squeeze(dim=0)  # Remove time dimension from belief/state
   action = planner(belief, posterior_state)  # Get action from planner(q(s_t|o≤t,a<t), p)
   if explore:
     action = action + args.action_noise * torch.randn_like(action)  # Add exploration noise ε ~ p(ε) to the action
-  next_observation, reward, done = env.step(action.cpu() if isinstance(env, EnvBatcher) else action[0].cpu())  # Perform environment step (action repeats handled internally)
-  return belief, posterior_state, action, next_observation, reward, done
+  next_observation, extrinsics, reward, done = env.step(action.cpu() if isinstance(env, EnvBatcher) else action[0].cpu())  # Perform environment step (action repeats handled internally)
+  return belief, posterior_state, action, next_observation, reward, done, extrinsics
 
 
 # Testing only
@@ -158,11 +159,11 @@ if args.test:
   with torch.no_grad():
     total_reward = 0
     for _ in tqdm(range(args.test_episodes)):
-      observation = env.reset()
+      observation, extrinsics = env.reset()
       belief, posterior_state, action = torch.zeros(1, args.belief_size, device=args.device), torch.zeros(1, args.state_size, device=args.device), torch.zeros(1, env.action_size, device=args.device)
       pbar = tqdm(range(args.max_episode_length // args.action_repeat))
       for t in pbar:
-        belief, posterior_state, action, observation, reward, done = update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device))
+        belief, posterior_state, action, observation, reward, done, extrinsics = update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device), extrinsics.to(device=args.device))
         total_reward += reward
         if done:
           pbar.close()
@@ -182,7 +183,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     if s>=100:
       pass
     # Draw sequence chunks {(o_t, a_t, r_t+1, terminal_t+1)} ~ D uniformly at random from the dataset (including terminal flags)
-    observations, actions, rewards, nonterminals = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
+    observations, actions, rewards, nonterminals, extrinsics = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
     # st()
     # if counter%10 == 0:
     # st()
@@ -191,7 +192,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # Create initial belief and state for time t = 0
     init_belief, init_state = torch.zeros(args.batch_size, args.belief_size, device=args.device), torch.zeros(args.batch_size, args.state_size, device=args.device)
     # Update belief/state using posterior from previous belief/state, previous action and current observation (over entire sequence at once)
-    beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], )), nonterminals[:-1])
+    beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], extrinsics[1:])), nonterminals[:-1])
     # Calculate observation likelihood, reward likelihood and KL losses (for t = 0 only for latent overshooting); sum over final dims, average over batch and time (original implementation, though paper seems to miss 1/T scaling?)
     pred_obs = bottle(observation_model, (beliefs, posterior_states))
     writer.add_image('output_rgb_1', pred_obs[0,0], counter)
@@ -252,12 +253,13 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
 
   # Data collection
   with torch.no_grad():
-    observation, total_reward = env.reset(), 0
+    observation, extrinsics = env.reset()
+    total_reward = 0
     belief, posterior_state, action = torch.zeros(1, args.belief_size, device=args.device), torch.zeros(1, args.state_size, device=args.device), torch.zeros(1, env.action_size, device=args.device)
     pbar = tqdm(range(args.max_episode_length // args.action_repeat))
     for t in pbar:
-      belief, posterior_state, action, next_observation, reward, done = update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device), explore=True)
-      D.append(observation, action.cpu(), reward, done)
+      belief, posterior_state, action, next_observation, reward, done, extrinsics = update_belief_and_act(args, env, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device), extrinsics.to(device=args.device), explore=True)
+      D.append(observation, action.cpu(), reward, done, extrinsics)
       total_reward += reward
       observation = next_observation
       if args.render:
@@ -285,11 +287,12 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     # test_envs = EnvBatcher(Env, (args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth), {}, args.test_episodes, args.datamod)
     test_envs = PushTaskEnv(args.max_episode_length, args.bit_depth, writer, args.datamod)
     with torch.no_grad():
-      observation, total_rewards, video_frames = test_envs.reset(mode=1), np.zeros((args.test_episodes, )), []
+      observation, extrinsics = test_envs.reset(mode=1)
+      total_rewards, video_frames = np.zeros((args.test_episodes, )), []
       belief, posterior_state, action = torch.zeros(args.test_episodes, args.belief_size, device=args.device), torch.zeros(args.test_episodes, args.state_size, device=args.device), torch.zeros(args.test_episodes, env.action_size, device=args.device)
       pbar = tqdm(range(args.max_episode_length // args.action_repeat))
       for t in pbar:
-        belief, posterior_state, action, next_observation, reward, done = update_belief_and_act(args, test_envs, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device))
+        belief, posterior_state, action, next_observation, reward, done, extrinsics = update_belief_and_act(args, test_envs, planner, transition_model, encoder, belief, posterior_state, action, observation.to(device=args.device), extrinsics.to(device=args.device))
         # total_rewards += reward.numpy()
         # if not args.symbolic_env:  # Collect real vs. predicted frames for video
         video_frames.append(make_grid(torch.cat([observation, observation_model(belief, posterior_state).cpu()], dim=3) + 0.5, nrow=5).numpy())  # Decentre

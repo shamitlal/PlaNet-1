@@ -103,6 +103,7 @@ class ControlSuiteEnv():
 class PushTaskEnv():
   def __init__(self, max_episode_length, bit_depth, writer=None, datamod=None):
     from PushImageInput import PushImageInput
+    # st()
     self._env = PushImageInput(datamod)
     self.max_episode_length = max_episode_length #should be 6
     self.action_repeat = 1
@@ -120,20 +121,22 @@ class PushTaskEnv():
     if self.writer != None:
       self.writer.add_image('fetched_rgb_mode_'+str(mode), self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
     self.writer_cntr+=1
-    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr)
-  
-  def getBatch(self):
-    push_data = self._env.data(0)
+    extrinsics = torch.tensor(self.inputs.origin_T_camXs.numpy()[0,0,0], dtype=torch.float32)
+    extrinsics = extrinsics.unsqueeze(dim=0) 
+    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr), extrinsics
 
   def step(self, action):
     action = action.detach().numpy()
     reward = 0
     done = False # We will never exceed sequence length for push task.
     observation = _images_to_observation(self.inputs.rgb_camXs.numpy()[0,self.sequence_num,0], self.bit_depth)
+    extrinsics = torch.tensor(self.inputs.origin_T_camXs.numpy()[0,self.sequence_num,0], dtype=torch.float32)
+    extrinsics = extrinsics.unsqueeze(dim=0) 
+    
     self.sequence_num += 1 
     if self.sequence_num == self.max_episode_length:
       done = True
-    return observation, reward, done
+    return observation, extrinsics, reward, done
 
   @property
   def observation_size(self):
@@ -227,9 +230,11 @@ class EnvBatcher():
 
   # Resets every environment and returns observation
   def reset(self):
-    observations = [env.reset() for env in self.envs]
+    env_resets = [env.reset() for env in self.envs]
+    observations = [i[0] for i in env_resets]
+    extrinsics = [i[1] for i in env_resets]
     self.dones = [False] * self.n
-    return torch.cat(observations)
+    return torch.cat(observations), torch.cat(extrinsics)
 
  # Steps/resets every environment and returns (observation, reward, done)
   def step(self, actions):

@@ -14,6 +14,7 @@ class ExperienceReplay():
     # if symbolic_env:
     #   self.observations = np.empty((size, observation_size), dtype=np.float32)
     self.observations = np.empty((size, 3, 64, 64), dtype = np.float)
+    self.extrinsics = np.empty((size, 4, 4), dtype = np.float)
     self.actions = np.empty((size, action_size), dtype=np.float32)
     self.rewards = np.empty((size, ), dtype=np.float32) 
     self.nonterminals = np.empty((size, 1), dtype=np.float32)
@@ -22,13 +23,14 @@ class ExperienceReplay():
     self.steps, self.episodes = 0, 0  # Tracks how much experience has been used in total
     self.bit_depth = bit_depth
 
-  def append(self, observation, action, reward, done, writer=None, counter=None):
+  def append(self, observation, action, reward, done, extrinsics, writer=None, counter=None):
     # st()
     # if self.symbolic_env:
     #   self.observations[self.idx] = observation.numpy()
     # else:
     # self.observations[self.idx] = postprocess_observation(observation.numpy(), self.bit_depth)  # Decentre and discretise visual observations (to save memory)
     self.observations[self.idx] = observation.numpy()
+    self.extrinsics[self.idx] = extrinsics.numpy()
     if writer != None:
       writer.add_image('exp_rep_appended_rgb', observation.numpy()[0], counter)
     self.actions[self.idx] = action.numpy()
@@ -52,7 +54,7 @@ class ExperienceReplay():
     observations = torch.as_tensor(self.observations[vec_idxs].astype(np.float32))
     # if not self.symbolic_env:
     # preprocess_observation_(observations, self.bit_depth)  # Undo discretisation for visual observations
-    return observations.reshape(L, n, *observations.shape[1:]), self.actions[vec_idxs].reshape(L, n, -1), self.rewards[vec_idxs].reshape(L, n), self.nonterminals[vec_idxs].reshape(L, n, 1)
+    return observations.reshape(L, n, *observations.shape[1:]), self.actions[vec_idxs].reshape(L, n, -1), self.rewards[vec_idxs].reshape(L, n), self.nonterminals[vec_idxs].reshape(L, n, 1), self.extrinsics[vec_idxs].reshape(L, n, 4, 4)
 
   # Returns a batch of sequence chunks uniformly sampled from the memory
   def sample(self, n, L):
