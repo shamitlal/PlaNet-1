@@ -6,22 +6,29 @@ import torch
 GYM_ENVS = ['Pendulum-v0', 'MountainCarContinuous-v0', 'Ant-v2', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2', 'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Reacher-v2', 'Swimmer-v2', 'Walker2d-v2']
 CONTROL_SUITE_ENVS = ['cartpole-balance', 'cartpole-swingup', 'reacher-easy', 'finger-spin', 'cheetah-run', 'ball_in_cup-catch', 'walker-walk']
 CONTROL_SUITE_ACTION_REPEATS = {'cartpole': 8, 'reacher': 4, 'finger': 2, 'cheetah': 4, 'ball_in_cup': 6, 'walker': 2}
-
+PUSH_ENVS = ['PushTask']
 
 # Preprocesses an observation inplace (from float32 Tensor [0, 255] to [-0.5, 0.5])
 def preprocess_observation_(observation, bit_depth):
-  observation.div_(2 ** (8 - bit_depth)).floor_().div_(2 ** bit_depth).sub_(0.5)  # Quantise to given bit depth and centre
-  observation.add_(torch.rand_like(observation).div_(2 ** bit_depth))  # Dequantise (to approx. match likelihood of PDF of continuous images vs. PMF of discrete images)
-
+  # observation.div_(2 ** (8 - bit_depth)).floor_().div_(2 ** bit_depth).sub_(0.5)  # Quantise to given bit depth and centre
+  # observation.add_(torch.rand_like(observation).div_(2 ** bit_depth))  # Dequantise (to approx. match likelihood of PDF of continuous images vs. PMF of discrete images)
+  observation = observation.double()
+  observation.div_(255.)
+  observation.add_(-0.5)
 
 # Postprocess an observation for storage (from float32 numpy array [-0.5, 0.5] to uint8 numpy array [0, 255])
 def postprocess_observation(observation, bit_depth):
-  return np.clip(np.floor((observation + 0.5) * 2 ** bit_depth) * 2 ** (8 - bit_depth), 0, 2 ** 8 - 1).astype(np.uint8)
+  return observation
+  # return np.clip(np.floor((observation + 0.5) * 2 ** bit_depth) * 2 ** (8 - bit_depth), 0, 2 ** 8 - 1).astype(np.uint8)
 
 
-def _images_to_observation(images, bit_depth):
+def _images_to_observation(images, bit_depth, writer=None, writer_cntr=None):
   images = torch.tensor(cv2.resize(images, (64, 64), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1), dtype=torch.float32)  # Resize and put channel first
+  if writer != None:
+    writer.add_image('before_preprocessed_rgb', images, writer_cntr)
   preprocess_observation_(images, bit_depth)  # Quantise, centre and dequantise inplace
+  if writer != None:
+    writer.add_image('after_preprocessed_rgb', images, writer_cntr)
   return images.unsqueeze(dim=0)  # Add batch dimension
 
 
@@ -86,6 +93,67 @@ class ControlSuiteEnv():
     return torch.from_numpy(np.random.uniform(spec.minimum, spec.maximum, spec.shape))
 
 
+class PushTaskEnv():
+  def __init__(self, max_episode_length, bit_depth, writer=None, datamod=None):
+    from PushImageInput import PushImageInput
+    self._env = PushImageInput(datamod)
+    self.max_episode_length = max_episode_length #should be 6
+    self.action_repeat = 1
+    self.bit_depth = bit_depth
+    self.sequence_num = 0 #points to where we are in given episode.
+    self.inputs = None # The inputs returned by PushImageInput
+    self.writer = writer
+    self.writer_cntr = 0
+    self.goal_state = None
+
+  def reset(self, mode=0):
+    self.t = 0  # Reset internal timer
+    self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
+    push_data = self._env.data(mode)
+    self.inputs = push_data.inputs
+    # Sample a goal state randomly
+    self.goal_state = torch.empty(1,2).uniform_(-1.5,1.5).type(torch.FloatTensor)
+    if self.writer != None:
+      self.writer.add_image('fetched_rgb_mode_'+str(mode), self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
+    self.writer_cntr+=1
+    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr), self.goal_state
+  
+  def getBatch(self):
+    push_data = self._env.data(0)
+
+  def step(self, action):
+    action = action.detach().numpy()
+    reward = 0
+    done = False # We will never exceed sequence length for push task.
+    observation = _images_to_observation(self.inputs.rgb_camXs.numpy()[0,self.sequence_num,0], self.bit_depth)
+    new_orn = self.inputs.xyzorn_objects.numpy()[0, self.sequence_num, 0][:2] #first two dimensions are x and y
+    final_orn = self.goal_state[0]
+    # Reward will be high when current position of object is close to final position
+    reward = -np.linalg.norm(new_orn - final_orn)
+    self.sequence_num += 1 
+    if self.sequence_num == self.max_episode_length:
+      done = True
+    return observation, reward, done
+
+  @property
+  def observation_size(self):
+    return (3, 64, 64)
+
+  @property
+  def action_size(self):
+    '''
+    sample.actions.shape = 
+    TensorShape([2, 5, 3])
+    '''
+    return 3
+
+  def sample_random_action(self):
+    return torch.from_numpy(self.inputs.actions.numpy()[0, self.sequence_num-1])
+    # rand_np = np.random.uniform(-0.3, 0.3, (3))
+    # return torch.from_numpy(rand_np)
+
+
+
 
 class GymEnv():
   def __init__(self, env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
@@ -140,7 +208,15 @@ class GymEnv():
     return torch.from_numpy(self._env.action_space.sample())
 
 
-def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
+# def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth):
+#   if env in GYM_ENVS:
+#     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
+#   elif env in CONTROL_SUITE_ENVS:
+#     return ControlSuiteEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
+
+def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer=None, datamod=None):
+  if env in PUSH_ENVS:
+    return PushTaskEnv(max_episode_length, bit_depth, writer, datamod)
   if env in GYM_ENVS:
     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
   elif env in CONTROL_SUITE_ENVS:
