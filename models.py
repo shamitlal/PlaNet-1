@@ -170,6 +170,7 @@ class VisualEncoder(jit.ScriptModule):
     hidden = self.act_fn(self.conv4(hidden))
     hidden = hidden.view(-1, 1024)
     goal = goal.view(-1, 2)
+    hidden = torch.cat((hidden, goal), 1)
     hidden = self.fc1(hidden)  # Identity if embedding size is 1024 else linear projection
     hidden = self.fc2(hidden)
     return hidden

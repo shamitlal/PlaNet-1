@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
 import torch
-
+import ipdb 
+st = ipdb.set_trace
 
 GYM_ENVS = ['Pendulum-v0', 'MountainCarContinuous-v0', 'Ant-v2', 'HalfCheetah-v2', 'Hopper-v2', 'Humanoid-v2', 'HumanoidStandup-v2', 'InvertedDoublePendulum-v2', 'InvertedPendulum-v2', 'Reacher-v2', 'Swimmer-v2', 'Walker2d-v2']
 CONTROL_SUITE_ENVS = ['cartpole-balance', 'cartpole-swingup', 'reacher-easy', 'finger-spin', 'cheetah-run', 'ball_in_cup-catch', 'walker-walk']
@@ -128,7 +129,8 @@ class PushTaskEnv():
     new_orn = self.inputs.xyzorn_objects.numpy()[0, self.sequence_num, 0][:2] #first two dimensions are x and y
     final_orn = self.goal_state[0]
     # Reward will be high when current position of object is close to final position
-    reward = -np.linalg.norm(new_orn - final_orn)
+    # st()
+    reward = -np.linalg.norm(new_orn - final_orn.numpy())
     self.sequence_num += 1 
     done = False
     if self.sequence_num == self.max_episode_length:
