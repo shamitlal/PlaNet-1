@@ -8,12 +8,12 @@ from torch.distributions.kl import kl_divergence
 from torch.nn import functional as F
 from torchvision.utils import make_grid, save_image
 from tqdm import tqdm
-from env import CONTROL_SUITE_ENVS, Env, GYM_ENVS, EnvBatcher
+from env import CONTROL_SUITE_ENVS, Env, GYM_ENVS, EnvBatcher, PushTaskEnv
 from memory import ExperienceReplay
 from models import bottle, Encoder, ObservationModel, RewardModel, TransitionModel
 from planner import MPCPlanner
 from utils import lineplot, write_video
-
+from tensorboardX import SummaryWriter
 
 # Hyperparameters
 parser = argparse.ArgumentParser(description='PlaNet')
@@ -66,6 +66,7 @@ print(' ' * 26 + 'Options')
 for k, v in vars(args).items():
   print(' ' * 26 + k + ': ' + str(v))
 
+writer_name = args.id
 writer = SummaryWriter('runs/'+writer_name)
 # Setup
 results_dir = os.path.join('results', args.id)
@@ -154,10 +155,10 @@ if args.test:
           pbar.close()
           break
   print('Average Reward:', total_reward / args.test_episodes)
-  env.close()
+  # env.close()
   quit()
 
-
+counter = 0
 # Training (and testing)
 for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total=args.episodes, initial=metrics['episodes'][-1] + 1):
   # Model fitting
@@ -258,7 +259,7 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
     encoder.eval()
     # Initialise parallelised test environments
     # test_envs = EnvBatcher(Env, (args.env, args.symbolic_env, args.seed, args.max_episode_length, args.action_repeat, args.bit_depth), {}, args.test_episodes)
-    test_env = PushTaskEnv(args.max_episode_length, args.bit_depth, writer, args.datamod)
+    test_envs = PushTaskEnv(args.max_episode_length, args.bit_depth, writer, args.datamod)
     with torch.no_grad():
       observation, goal = test_envs.reset(mode = 1)
       total_rewards, video_frames = np.zeros((args.test_episodes, )), []

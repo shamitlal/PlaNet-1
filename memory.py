@@ -9,6 +9,7 @@ class ExperienceReplay():
     self.symbolic_env = symbolic_env
     self.size = size
     self.observations = np.empty((size, observation_size) if symbolic_env else (size, 3, 64, 64), dtype=np.float32)# if symbolic_env else np.uint8)
+    self.goal = np.empty((size, 2), dtype=np.float32)
     self.actions = np.empty((size, action_size), dtype=np.float32)
     self.rewards = np.empty((size, ), dtype=np.float32) 
     self.nonterminals = np.empty((size, 1), dtype=np.float32)
@@ -29,11 +30,12 @@ class ExperienceReplay():
   #   self.full = self.full or self.idx == 0
   #   self.steps, self.episodes = self.steps + 1, self.episodes + (1 if done else 0)
   
-  def append(self, observation, action, reward, done, writer=None, counter=None):
+  def append(self, observation, action, reward, goal, done, writer=None, counter=None):
     
     self.observations[self.idx] = observation.numpy()
     if writer != None:
       writer.add_image('exp_rep_appended_rgb', observation.numpy()[0], counter)
+    self.goal[self.idx] = goal.numpy()
     self.actions[self.idx] = action.numpy()
     self.rewards[self.idx] = reward
     self.nonterminals[self.idx] = not done
@@ -55,7 +57,7 @@ class ExperienceReplay():
     observations = torch.as_tensor(self.observations[vec_idxs].astype(np.float32))
     # if not self.symbolic_env:
     #   preprocess_observation_(observations, self.bit_depth)  # Undo discretisation for visual observations
-    return observations.reshape(L, n, *observations.shape[1:]), self.actions[vec_idxs].reshape(L, n, -1), self.rewards[vec_idxs].reshape(L, n), self.nonterminals[vec_idxs].reshape(L, n, 1)
+    return observations.reshape(L, n, *observations.shape[1:]), self.actions[vec_idxs].reshape(L, n, -1), self.rewards[vec_idxs].reshape(L, n), self.nonterminals[vec_idxs].reshape(L, n, 1), self.goal[vec_idxs].reshape(L, n, 2)
 
   # Returns a batch of sequence chunks uniformly sampled from the memory
   def sample(self, n, L):

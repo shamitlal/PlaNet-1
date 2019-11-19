@@ -17,7 +17,7 @@ def preprocess_color(x):
 
 
 
-B = 2
+B = 1
 DEBUG_MODE = False
 
 

@@ -104,14 +104,14 @@ class PushTaskEnv():
     self.inputs = None # The inputs returned by PushImageInput
     self.writer = writer
     self.writer_cntr = 0
-    self.goal_state = None
+    self.goal_state = None # The random sampled goal state.
 
   def reset(self, mode=0):
     self.t = 0  # Reset internal timer
     self.sequence_num = 1 #point to 1 because we are already returning 0th image below.
     push_data = self._env.data(mode)
     self.inputs = push_data.inputs
-    # Sample a goal state randomly
+    # Sample a goal state (x and y) randomly
     self.goal_state = torch.empty(1,2).uniform_(-1.5,1.5).type(torch.FloatTensor)
     if self.writer != None:
       self.writer.add_image('fetched_rgb_mode_'+str(mode), self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
@@ -124,13 +124,13 @@ class PushTaskEnv():
   def step(self, action):
     action = action.detach().numpy()
     reward = 0
-    done = False # We will never exceed sequence length for push task.
     observation = _images_to_observation(self.inputs.rgb_camXs.numpy()[0,self.sequence_num,0], self.bit_depth)
     new_orn = self.inputs.xyzorn_objects.numpy()[0, self.sequence_num, 0][:2] #first two dimensions are x and y
     final_orn = self.goal_state[0]
     # Reward will be high when current position of object is close to final position
     reward = -np.linalg.norm(new_orn - final_orn)
     self.sequence_num += 1 
+    done = False
     if self.sequence_num == self.max_episode_length:
       done = True
     return observation, reward, done
@@ -216,8 +216,9 @@ class GymEnv():
 
 def Env(env, symbolic, seed, max_episode_length, action_repeat, bit_depth, writer=None, datamod=None):
   if env in PUSH_ENVS:
+    print("Push Environment selected!")
     return PushTaskEnv(max_episode_length, bit_depth, writer, datamod)
-  if env in GYM_ENVS:
+  elif env in GYM_ENVS:
     return GymEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
   elif env in CONTROL_SUITE_ENVS:
     return ControlSuiteEnv(env, symbolic, seed, max_episode_length, action_repeat, bit_depth)
