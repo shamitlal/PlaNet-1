@@ -93,13 +93,13 @@ elif not args.test:
   # Initialise dataset D with S random seed episodes
   for s in range(1, args.seed_episodes + 1):
     print("seeding episode :", s)
-    observation, goal = env.reset()
+    observation, goal, extrinsics = env.reset()
     done, t = False, 0
     while not done:
       action = env.sample_random_action()
-      next_observation, reward, done = env.step(action)
+      next_observation, extrinsics, reward, done = env.step(action)
       writer.add_image('seeded_rgb_step', next_observation[0], s)
-      D.append(observation, action, reward, goal, done, writer, s)
+      D.append(observation, action, reward, goal, done, extrinsics, writer, s)
       observation = next_observation
       t += 1
     metrics['steps'].append(t * args.action_repeat + (0 if len(metrics['steps']) == 0 else metrics['steps'][-1]))
@@ -168,16 +168,16 @@ for episode in tqdm(range(metrics['episodes'][-1] + 1, args.episodes + 1), total
   for s in tqdm(range(args.collect_interval)):
     counter += 1
     # Draw sequence chunks {(o_t, a_t, r_t+1, terminal_t+1)} ~ D uniformly at random from the dataset (including terminal flags)
-    observations, actions, rewards, nonterminals, goal = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
+    observations, actions, rewards, nonterminals, goal, extrinsics = D.sample(args.batch_size, args.chunk_size)  # Transitions start at time t = 0
     writer.add_image('input_rgb_1', observations[0,0], counter)
     writer.add_image('input_rgb_2', observations[1,0], counter)
     # Create initial belief and state for time t = 0
     init_belief, init_state = torch.zeros(args.batch_size, args.belief_size, device=args.device), torch.zeros(args.batch_size, args.state_size, device=args.device)
     # Update belief/state using posterior from previous belief/state, previous action and current observation (over entire sequence at once)
     # st()
-    pred_obs = bottle(encoder, (observations[1:], goal[1:]))
+    pred_obs = bottle(encoder, (observations[1:], goal[1:], extrinsics[1:]))
     
-    beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], goal[1:])), nonterminals[:-1])
+    beliefs, prior_states, prior_means, prior_std_devs, posterior_states, posterior_means, posterior_std_devs = transition_model(init_state, actions[:-1], init_belief, bottle(encoder, (observations[1:], goal[1:], extrinsics[1:])), nonterminals[:-1])
     pred_obs = bottle(observation_model, (beliefs, posterior_states))
     writer.add_image('output_rgb_1', pred_obs[0,0], counter)
     writer.add_image('output_rgb_2', pred_obs[1,0], counter)

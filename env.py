@@ -117,7 +117,9 @@ class PushTaskEnv():
     if self.writer != None:
       self.writer.add_image('fetched_rgb_mode_'+str(mode), self.inputs.rgb_camXs.numpy()[0,0,0].transpose(2,0,1), self.writer_cntr)
     self.writer_cntr+=1
-    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr), self.goal_state
+    extrinsics = torch.tensor(self.inputs.origin_T_camXs.numpy()[0,0,0], dtype=torch.float32)
+    extrinsics = extrinsics.unsqueeze(dim=0) 
+    return _images_to_observation(self.inputs.rgb_camXs.numpy()[0,0,0], self.bit_depth, self.writer, self.writer_cntr), self.goal_state, extrinsics
   
   def getBatch(self):
     push_data = self._env.data(0)
@@ -126,6 +128,10 @@ class PushTaskEnv():
     action = action.detach().numpy()
     reward = 0
     observation = _images_to_observation(self.inputs.rgb_camXs.numpy()[0,self.sequence_num,0], self.bit_depth)
+
+    extrinsics = torch.tensor(self.inputs.origin_T_camXs.numpy()[0,self.sequence_num,0], dtype=torch.float32)
+    extrinsics = extrinsics.unsqueeze(dim=0) 
+
     new_orn = self.inputs.xyzorn_objects.numpy()[0, self.sequence_num, 0][:2] #first two dimensions are x and y
     final_orn = self.goal_state[0]
     # Reward will be high when current position of object is close to final position
@@ -135,7 +141,7 @@ class PushTaskEnv():
     done = False
     if self.sequence_num == self.max_episode_length:
       done = True
-    return observation, reward, done
+    return observation, extrinsics, reward, done
 
   @property
   def observation_size(self):

@@ -25,7 +25,7 @@ class PushInput_io(TFDataInput):
     def __init__(self, datamod):
         super().__init__()
         self.datamod = datamod
-        self.dataroot = "/projects/katefgroup/datasets/bullet_push_frontonly"
+        self.dataroot = "/projects/katefgroup/datasets/bullet_push"
         self.dataset_location = f"{self.dataroot}/{self.datamod}"
         self.data_paths = {
               "train": f"{self.dataroot}/{self.datamod}t.txt", 

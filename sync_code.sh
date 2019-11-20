@@ -1,1 +1,1 @@
-rsync -av . cmu:/home/shamitl/projects/PlaNet-1
+rsync -av . cmu:/home/shamitl/projects/planetext/PlaNet-1
