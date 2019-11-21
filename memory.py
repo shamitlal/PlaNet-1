@@ -21,6 +21,8 @@ class ExperienceReplay():
     self.full = False  # Tracks if memory has been filled/all slots are valid
     self.steps, self.episodes = 0, 0  # Tracks how much experience has been used in total
     self.bit_depth = bit_depth
+    self.episode_start_idx = np.empty((size, ), dtype=np.float32) 
+    self.num_episodes = 0
 
   # def append(self, observation, action, reward, done):
   #   if self.symbolic_env:
@@ -47,14 +49,22 @@ class ExperienceReplay():
     self.idx = (self.idx + 1) % self.size
     self.full = self.full or self.idx == 0
     self.steps, self.episodes = self.steps + 1, self.episodes + (1 if done else 0)
+    if done:
+      self.episode_start_idx[self.num_episodes] = self.idx - 4
+      self.num_episodes += 1
 
   # Returns an index for a valid single sequence chunk uniformly sampled from the memory
   def _sample_idx(self, L):
     valid_idx = False
+    # st()
     while not valid_idx:
-      idx = np.random.randint(0, self.size if self.full else self.idx - L)
-      idxs = np.arange(idx, idx + L) % self.size
-      valid_idx = not self.idx in idxs[1:]  # Make sure data does not cross the memory index
+      idx = np.random.randint(0, self.num_episodes-1)
+      idx = self.episode_start_idx[idx]
+      valid_idx = True
+      # idx = np.random.randint(0, self.size if self.full else self.idx - L)
+      idxs = np.arange(idx, idx + L, dtype=np.int) % self.size
+      # st()
+      # valid_idx = not self.idx in idxs[1:]  # Make sure data does not cross the memory index
     return idxs
 
   def _retrieve_batch(self, idxs, n, L):

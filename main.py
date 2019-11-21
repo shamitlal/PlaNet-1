@@ -24,7 +24,7 @@ parser.add_argument('--seed', type=int, default=1, metavar='S', help='Random see
 parser.add_argument('--disable-cuda', action='store_true', help='Disable CUDA')
 parser.add_argument('--env', type=str, default='PushTask', choices=GYM_ENVS + CONTROL_SUITE_ENVS, help='Gym/Control Suite environment')
 parser.add_argument('--symbolic-env', default=False, action='store_false', help='Symbolic features')
-parser.add_argument('--max-episode-length', type=int, default=4, metavar='T', help='Max episode length')
+parser.add_argument('--max-episode-length', type=int, default=5, metavar='T', help='Max episode length')
 parser.add_argument('--experience-size', type=int, default=1000000, metavar='D', help='Experience replay size')  # Original implementation has an unlimited buffer size, but 1 million is the max experience collected anyway
 parser.add_argument('--activation-function', type=str, default='relu', choices=dir(F), help='Model activation function')
 parser.add_argument('--embedding-size', type=int, default=1024, metavar='E', help='Observation embedding size')  # Note that the default encoder for visual observations outputs a 1024D vector; for other embedding sizes an additional fully-connected layer is used
@@ -37,7 +37,7 @@ parser.add_argument('--episodes', type=int, default=1000000, metavar='E', help='
 parser.add_argument('--seed-episodes', type=int, default=2000, metavar='S', help='Seed episodes')
 parser.add_argument('--collect-interval', type=int, default=100, metavar='C', help='Collect interval')
 parser.add_argument('--batch-size', type=int, default=2, metavar='B', help='Batch size')
-parser.add_argument('--chunk-size', type=int, default=5, metavar='L', help='Chunk size')
+parser.add_argument('--chunk-size', type=int, default=4, metavar='L', help='Chunk size')
 parser.add_argument('--overshooting-distance', type=int, default=4, metavar='D', help='Latent overshooting distance/latent overshooting weight for t = 1')
 parser.add_argument('--overshooting-kl-beta', type=float, default=0, metavar='β>1', help='Latent overshooting KL weight for t > 1 (0 to disable)')
 parser.add_argument('--overshooting-reward-scale', type=float, default=0, metavar='R>1', help='Latent overshooting reward prediction weight for t > 1 (0 to disable)')
@@ -113,6 +113,7 @@ reward_model = RewardModel(args.belief_size, args.state_size, args.hidden_size, 
 encoder = Encoder(args.symbolic_env, env.observation_size, args.embedding_size, args.activation_function).to(device=args.device)
 param_list = list(transition_model.parameters()) + list(observation_model.parameters()) + list(reward_model.parameters()) + list(encoder.parameters())
 optimiser = optim.Adam(param_list, lr=0 if args.learning_rate_schedule != 0 else args.learning_rate, eps=args.adam_epsilon)
+st()
 if args.models is not '' and os.path.exists(args.models):
   model_dicts = torch.load(args.models)
   transition_model.load_state_dict(model_dicts['transition_model'])
